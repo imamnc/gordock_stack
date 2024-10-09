@@ -1,0 +1,126 @@
+version: '3'
+
+# Networks
+networks:
+  gordock-net:
+    driver: bridge
+
+# Volumes
+volumes:
+  postgres_data:
+    driver: local
+
+# Services
+services:
+
+  ##############################################
+  # Pantheon: Agora Main Framework
+  ##############################################
+  pantheon:
+    image: pantheon
+    container_name: gordock-pantheon
+    restart: on-failure
+    ports:
+      - "8000:8000"
+      - "5173:5173"
+      - "5174:5174"
+      - "5000:5000"
+    networks:
+      - gordock-net
+    healthcheck:
+      test: [ "CMD", "php", "artisan", "octane:status" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ##############################################
+  # Nginx: Web Server
+  ##############################################
+  nginx:
+    image: nginx:alpine
+    container_name: gordock-nginx
+    restart: on-failure
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - gordock-net
+    volumes:
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/sites:/etc/nginx/conf.d
+
+  ##############################################
+  # Postgres: Database
+  ##############################################
+  postgres:
+    image: postgres:13
+    container_name: gordock-postgres
+    restart: on-failure
+    networks:
+      - gordock-net
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/backup:/home
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ##############################################
+  # Redis: Redis Server
+  ##############################################
+  redis:
+    image: redis:7.2
+    container_name: gordock-redis
+    restart: on-failure
+    networks:
+      - gordock-net
+    volumes:
+      - ./redis/config:/usr/local/etc/redis
+    ports:
+      - "${REDIS_PORT}:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  
+  ##############################################
+  # Soketi: Socket Server
+  ##############################################
+  soketi:
+    image: quay.io/soketi/soketi:1.4-16-debian
+    container_name: gordock-soketi
+    restart: on-failure
+    environment:
+      SOKETI_DEBUG: '1'
+      SOKETI_METRICS_SERVER_PORT: '9601'
+      SOKETI_DEFAULT_APP_ID: 'pantheon-id'
+      SOKETI_DEFAULT_APP_KEY: 'pantheon-key'
+      SOKETI_DEFAULT_APP_SECRET: 'pantheon-secret'
+    networks:
+      - gordock-net
+    ports:
+      - "6001:6001"
+      - "9601:9601"
+
+  ##############################################
+  # Mailpit: Email catcher for development
+  ##############################################
+  mailpit:
+    image: axllent/mailpit
+    container_name: gordock-mailpit
+    restart: on-failure
+    networks:
+      - gordock-net
+    ports:
+      - "8025:8025"
+      - "1025:1025"
